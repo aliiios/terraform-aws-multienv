@@ -1,0 +1,228 @@
+# =============================================================================
+# PULL REQUEST PIPELINE
+#
+# Runs on every PR. Nothing here can change infrastructure — the most
+# destructive thing it does is `terraform plan`, which is read-only.
+#
+# AUTHENTICATION: OIDC. GitHub requests a short-lived signed JWT, exchanges it
+# for temporary AWS credentials via sts:AssumeRoleWithWebIdentity, and those
+# credentials expire when the job ends. NO AWS_ACCESS_KEY_ID or
+# AWS_SECRET_ACCESS_KEY is ever stored in this repository.
+# =============================================================================
+name: Terraform CI
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Least privilege at the workflow level.
+permissions:
+  contents: read
+  id-token: write        # REQUIRED for OIDC — without it the JWT request fails
+  pull-requests: write   # to post the plan as a PR comment
+
+env:
+  TF_VERSION: "1.11.4"
+  AWS_REGION: eu-west-3
+
+concurrency:
+  group: terraform-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Fast, credential-free checks. These need no AWS access at all, so they run
+  # first and fail fast without ever assuming a role.
+  # ---------------------------------------------------------------------------
+  static-analysis:
+    name: Format, Lint and Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive -diff
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: latest
+
+      - name: TFLint
+        run: |
+          tflint --init
+          tflint --recursive --format compact
+
+      # Checkov replaces tfsec, which was deprecated and merged into Trivy.
+      - name: Checkov
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: .
+          framework: terraform
+          soft_fail: false
+          output_format: cli,sarif
+          output_file_path: console,checkov.sarif
+
+      - name: Upload Checkov SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: checkov.sarif
+        continue-on-error: true
+
+  # ---------------------------------------------------------------------------
+  # Plan-time unit tests. Still no AWS resources created.
+  # ---------------------------------------------------------------------------
+  test:
+    name: Terraform Tests
+    runs-on: ubuntu-latest
+    needs: static-analysis
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      matrix:
+        module: [vpc, rds, ecs]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      # Even `terraform test` with command=plan needs credentials, because the
+      # provider is initialised and some data sources are resolved.
+      - name: Assume AWS role via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: gha-test-${{ github.run_id }}
+
+      - name: Run tests
+        working-directory: modules/${{ matrix.module }}
+        run: |
+          terraform init -backend=false
+          terraform test
+
+  # ---------------------------------------------------------------------------
+  # Plan EVERY environment on every PR.
+  #
+  # This is what makes "code all three, apply one" honest: staging and prod are
+  # continuously proven to be valid, plannable configurations even though they
+  # are never applied in this project.
+  # ---------------------------------------------------------------------------
+  plan:
+    name: Plan (${{ matrix.environment }})
+    runs-on: ubuntu-latest
+    needs: static-analysis
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: [dev, staging, prod]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Assume AWS role via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: gha-plan-${{ matrix.environment }}-${{ github.run_id }}
+
+      - name: Terraform Init
+        working-directory: environments/${{ matrix.environment }}
+        run: terraform init -input=false
+
+      - name: Terraform Validate
+        working-directory: environments/${{ matrix.environment }}
+        run: terraform validate -no-color
+
+      - name: Terraform Plan
+        id: plan
+        working-directory: environments/${{ matrix.environment }}
+        run: |
+          terraform plan -input=false -no-color \
+            -var-file=${{ matrix.environment }}.tfvars \
+            -out=tfplan | tee plan.txt
+        continue-on-error: true
+
+      - name: Post plan to the pull request
+        uses: actions/github-script@v7
+        if: github.event_name == 'pull_request'
+        env:
+          PLAN_ENV: ${{ matrix.environment }}
+        with:
+          script: |
+            const fs = require('fs');
+            const path = `environments/${process.env.PLAN_ENV}/plan.txt`;
+            let plan = fs.existsSync(path) ? fs.readFileSync(path, 'utf8') : 'Plan unavailable.';
+            // GitHub comments cap at 65536 characters.
+            if (plan.length > 60000) {
+              plan = plan.slice(0, 60000) + '\n\n... plan truncated, see the job log ...';
+            }
+            const body = `### Terraform Plan — \`${process.env.PLAN_ENV}\`\n\n<details><summary>Show plan</summary>\n\n\`\`\`terraform\n${plan}\n\`\`\`\n\n</details>`;
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body
+            });
+
+      - name: Fail if the plan failed
+        if: steps.plan.outcome == 'failure'
+        run: exit 1
+
+  # ---------------------------------------------------------------------------
+  # Cost impact. Reviewers see the monthly delta before approving.
+  # ---------------------------------------------------------------------------
+  cost:
+    name: Infracost
+    runs-on: ubuntu-latest
+    needs: static-analysis
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+
+      - uses: infracost/actions/setup@v3
+        with:
+          api-key: ${{ secrets.INFRACOST_API_KEY }}
+
+      - name: Baseline cost (target branch)
+        run: |
+          infracost breakdown --path environments/dev \
+            --format json --out-file /tmp/infracost-base.json
+
+      - uses: actions/checkout@v4
+
+      - name: Cost diff (this PR)
+        run: |
+          infracost diff --path environments/dev \
+            --compare-to /tmp/infracost-base.json \
+            --format json --out-file /tmp/infracost.json
+
+      - name: Comment cost impact
+        run: |
+          infracost comment github --path /tmp/infracost.json \
+            --repo $GITHUB_REPOSITORY \
+            --github-token ${{ secrets.GITHUB_TOKEN }} \
+            --pull-request ${{ github.event.pull_request.number }} \
+            --behavior update

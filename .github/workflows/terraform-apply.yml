@@ -1,0 +1,119 @@
+# =============================================================================
+# DEPLOY PIPELINE
+#
+# Runs only on merge to main, and only for dev.
+#
+# WHY ONLY DEV: this is a portfolio/PFE project. staging and prod are fully
+# coded and continuously plan-verified in CI, but deliberately never applied,
+# to keep AWS spend near zero. The jobs for them exist below, gated behind
+# GitHub Environments that require manual approval — so the pipeline is
+# architecturally complete and could promote to prod by approving a review.
+#
+# PROMOTION MODEL:
+#   PR opened   -> plan all three environments, post plan + cost to the PR
+#   PR merged   -> apply dev automatically
+#   staging/prod-> require a manual environment approval before applying
+# =============================================================================
+name: Terraform Apply
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to apply
+        required: true
+        default: dev
+        type: choice
+        options: [dev, staging, prod]
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  TF_VERSION: "1.11.4"
+  AWS_REGION: eu-west-3
+
+concurrency:
+  group: terraform-apply-${{ github.ref }}
+  cancel-in-progress: false   # NEVER cancel an in-flight apply
+
+jobs:
+  apply-dev:
+    name: Apply dev
+    runs-on: ubuntu-latest
+    # A GitHub Environment gives you protection rules, required reviewers and
+    # environment-scoped secrets. Even dev goes through one.
+    environment:
+      name: dev
+    if: github.event_name == 'push' || inputs.environment == 'dev'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Assume AWS role via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: gha-apply-dev-${{ github.run_id }}
+
+      - name: Terraform Init
+        working-directory: environments/dev
+        run: terraform init -input=false
+
+      # Re-plan and apply that exact plan file rather than running a bare
+      # `terraform apply`. This guarantees we apply precisely what was
+      # reviewed, with no drift between plan and apply.
+      - name: Terraform Plan
+        working-directory: environments/dev
+        run: terraform plan -input=false -var-file=dev.tfvars -out=tfplan
+
+      - name: Terraform Apply
+        working-directory: environments/dev
+        run: terraform apply -input=false -auto-approve tfplan
+
+      - name: Outputs
+        working-directory: environments/dev
+        run: terraform output
+
+  # ---------------------------------------------------------------------------
+  # Manual-only. Requires approving the `staging` / `prod` GitHub Environment.
+  # Not triggered by a merge.
+  # ---------------------------------------------------------------------------
+  apply-gated:
+    name: Apply ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && inputs.environment != 'dev'
+    environment:
+      name: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Assume AWS role via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: gha-apply-${{ inputs.environment }}-${{ github.run_id }}
+
+      - name: Terraform Init
+        working-directory: environments/${{ inputs.environment }}
+        run: terraform init -input=false
+
+      - name: Terraform Plan
+        working-directory: environments/${{ inputs.environment }}
+        run: terraform plan -input=false -var-file=${{ inputs.environment }}.tfvars -out=tfplan
+
+      - name: Terraform Apply
+        working-directory: environments/${{ inputs.environment }}
+        run: terraform apply -input=false -auto-approve tfplan

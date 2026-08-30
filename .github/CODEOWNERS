@@ -1,0 +1,7 @@
+# Default owner for everything in this repository.
+* @aliiios
+
+# Higher-risk paths worth calling out explicitly.
+/bootstrap/          @aliiios
+/.github/workflows/  @aliiios
+/environments/prod/  @aliiios
