@@ -1,0 +1,8 @@
+# Copy to terraform.tfvars and set your real values, then `terraform apply`.
+# terraform.tfvars is gitignored by the repository-wide *.tfvars rule.
+
+github_repository = "aliiios/terraform-aws-multienv"
+
+# Optional overrides:
+# aws_region          = "eu-west-3"
+# state_bucket_prefix = "alios-terraform-state"
