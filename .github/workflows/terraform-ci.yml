@@ -39,7 +39,7 @@ jobs:
     name: Format, Lint and Security Scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: hashicorp/setup-terraform@v3
         with:
@@ -89,7 +89,7 @@ jobs:
       matrix:
         module: [vpc, rds, ecs]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: hashicorp/setup-terraform@v3
         with:
@@ -130,7 +130,7 @@ jobs:
       matrix:
         environment: [dev, staging, prod]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: hashicorp/setup-terraform@v3
         with:
@@ -198,7 +198,7 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.base.ref }}
 
@@ -211,7 +211,7 @@ jobs:
           infracost breakdown --path environments/dev \
             --format json --out-file /tmp/infracost-base.json
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Cost diff (this PR)
         run: |
