@@ -1,0 +1,10 @@
+# Copy this file to backend.hcl and fill in the values, then run:
+#     terraform init -backend-config=backend.hcl
+#
+# Get the bucket name from the bootstrap output:
+#     cd ../../bootstrap && terraform output -raw state_bucket_name
+#
+# backend.hcl is gitignored: it is account-specific, not shared configuration.
+
+bucket = "REPLACE-WITH-YOUR-STATE-BUCKET"
+region = "eu-west-3"
