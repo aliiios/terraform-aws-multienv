@@ -28,13 +28,13 @@ locals {
   # Interface endpoints to create. Each becomes an ENI in every private app
   # subnet, with a private DNS name that shadows the public AWS API endpoint.
   interface_endpoints = var.enable_interface_endpoints ? {
-    ecr_api         = "com.amazonaws.${data.aws_region.current.region}.ecr.api"
-    ecr_dkr         = "com.amazonaws.${data.aws_region.current.region}.ecr.dkr"
-    secretsmanager  = "com.amazonaws.${data.aws_region.current.region}.secretsmanager"
-    logs            = "com.amazonaws.${data.aws_region.current.region}.logs"
-    sts             = "com.amazonaws.${data.aws_region.current.region}.sts"
-    ssm             = "com.amazonaws.${data.aws_region.current.region}.ssm"
-    ssmmessages     = "com.amazonaws.${data.aws_region.current.region}.ssmmessages"
+    ecr_api        = "com.amazonaws.${data.aws_region.current.region}.ecr.api"
+    ecr_dkr        = "com.amazonaws.${data.aws_region.current.region}.ecr.dkr"
+    secretsmanager = "com.amazonaws.${data.aws_region.current.region}.secretsmanager"
+    logs           = "com.amazonaws.${data.aws_region.current.region}.logs"
+    sts            = "com.amazonaws.${data.aws_region.current.region}.sts"
+    ssm            = "com.amazonaws.${data.aws_region.current.region}.ssm"
+    ssmmessages    = "com.amazonaws.${data.aws_region.current.region}.ssmmessages"
   } : {}
 }
 

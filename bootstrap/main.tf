@@ -159,8 +159,8 @@ resource "aws_s3_bucket_policy" "state_tls_only" {
 resource "aws_iam_openid_connect_provider" "github" {
   count = var.create_github_oidc ? 1 : 0
 
-  url             = "https://token.actions.githubusercontent.com"
-  client_id_list  = ["sts.amazonaws.com"]
+  url            = "https://token.actions.githubusercontent.com"
+  client_id_list = ["sts.amazonaws.com"]
   # AWS now validates GitHub's certificate chain against trusted root CAs,
   # so this thumbprint is no longer security-critical, but the argument
   # remains required by the API.
@@ -203,9 +203,9 @@ data "aws_iam_policy_document" "github_assume_role" {
 resource "aws_iam_role" "github_actions" {
   count = var.create_github_oidc ? 1 : 0
 
-  name               = "github-actions-terraform"
-  description        = "Assumed by GitHub Actions via OIDC to run Terraform"
-  assume_role_policy = data.aws_iam_policy_document.github_assume_role.json
+  name                 = "github-actions-terraform"
+  description          = "Assumed by GitHub Actions via OIDC to run Terraform"
+  assume_role_policy   = data.aws_iam_policy_document.github_assume_role.json
   max_session_duration = 3600
 
   tags = { Name = "github-actions-terraform" }

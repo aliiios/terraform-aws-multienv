@@ -22,15 +22,10 @@ terraform fmt -recursive -check
 Both must pass. Pushing code that fails `terraform validate` is the fastest way
 to damage the credibility of a portfolio repository.
 
-### 1b. Personalise and build the git history
+### 1b. Build the git history
 
-```bash
-./init-repo.sh <your-github-username>
-```
-
-This replaces the `aliiios` placeholders (CODEOWNERS, README
-badge) and creates a phased commit history — one commit per component — rather
-than a single opaque "initial commit".
+Commit in phases — one commit per component — rather than a single opaque
+"initial commit". See the repository's commit history for the pattern used.
 
 ### 1c. Create the repository and push
 

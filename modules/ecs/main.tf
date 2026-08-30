@@ -263,7 +263,7 @@ resource "aws_lb" "this" {
   enable_deletion_protection = var.enable_deletion_protection
 
   # Protects against desynchronisation-based request smuggling attacks.
-  desync_mitigation_mode = "defensive"
+  desync_mitigation_mode     = "defensive"
   drop_invalid_header_fields = true
 
   idle_timeout = 60

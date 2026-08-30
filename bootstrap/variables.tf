@@ -18,7 +18,7 @@ variable "github_repository" {
   type        = string
 
   validation {
-    condition     = can(regex("^[^/]+/[^/]+$", var.github_repository)) && !startswith(var.github_repository, "aliiios")
+    condition     = can(regex("^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$", var.github_repository))
     error_message = "Set github_repository to your real 'owner/repo' (e.g. in terraform.tfvars or with -var)."
   }
 }
