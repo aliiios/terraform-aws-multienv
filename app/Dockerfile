@@ -9,7 +9,7 @@
 #   - small attack surface (alpine)
 #   - a /health endpoint the ALB and ECS can probe
 # =============================================================================
-FROM nginx:1.27-alpine
+FROM nginx:1.31-alpine
 
 # Run as a non-root user. nginx:alpine ships an `nginx` user (uid 101).
 # Prepare the directories that user needs to write to.
