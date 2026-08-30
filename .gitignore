@@ -1,0 +1,60 @@
+# ---------------------------------------------------------------------------
+# Terraform
+# ---------------------------------------------------------------------------
+# Local plugin/module cache — machine specific, large, never committed.
+**/.terraform/*
+
+# State files. They contain resource IDs and can contain sensitive attribute
+# values. State lives in S3 (see environments/*/backend.tf). NEVER commit it.
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+
+# Crash logs
+crash.log
+crash.*.log
+
+# Saved plan files can contain secret values in plaintext.
+*.tfplan
+plan.out
+tfplan
+
+# Variable files are ignored BY DEFAULT because people put secrets in them.
+*.tfvars
+*.tfvars.json
+
+# ...but OUR env tfvars contain NO secrets (all secrets live in AWS Secrets
+# Manager), and they usefully document each environment, so allow-list them.
+!environments/dev/dev.tfvars
+!environments/staging/staging.tfvars
+!environments/prod/prod.tfvars
+
+# The dependency lock file MUST be committed (reproducible provider versions).
+!**/.terraform.lock.hcl
+
+# CLI config that can contain credentials
+.terraformrc
+terraform.rc
+
+# Backend configuration is account-specific (bucket names differ per account).
+# The committed backend.hcl.example documents the required keys.
+backend.hcl
+
+# ---------------------------------------------------------------------------
+# Secrets / credentials (belt and braces — pre-commit also scans for these)
+# ---------------------------------------------------------------------------
+.env
+.env.*
+*.pem
+*.key
+credentials
+.aws/
+
+# ---------------------------------------------------------------------------
+# OS / editor
+# ---------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/

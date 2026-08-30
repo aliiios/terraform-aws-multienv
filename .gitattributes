@@ -1,0 +1,16 @@
+# Normalise line endings so the repo is identical on Linux, macOS and Windows.
+* text=auto eol=lf
+
+# Terraform files are HCL — make GitHub's language stats reflect that.
+*.tf     linguist-language=HCL
+*.tfvars linguist-language=HCL
+*.hcl    linguist-language=HCL
+
+# Documentation should not dominate the language breakdown.
+docs/**         linguist-documentation
+architecture/** linguist-documentation
+
+# Never diff these as text.
+*.png binary
+*.jpg binary
+*.pdf binary
