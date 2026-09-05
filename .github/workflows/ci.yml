@@ -1,0 +1,108 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TF_VERSION: "1.11.4"
+  TFLINT_VERSION: "v0.58.0"
+  CHECKOV_VERSION: "3.3.16"
+  TF_IN_AUTOMATION: "1"
+
+jobs:
+  validate:
+    name: Format & Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Cache Terraform providers
+        uses: actions/cache@v4
+        with:
+          path: ~/.terraform.d/plugin-cache
+          key: ${{ runner.os }}-tf-${{ env.TF_VERSION }}-${{ hashFiles('**/*.tf') }}
+          restore-keys: ${{ runner.os }}-tf-${{ env.TF_VERSION }}-
+
+      - name: Check formatting
+        run: terraform fmt -check -recursive -diff
+
+      - name: Initialise and validate every root and module
+        # -backend=false skips the S3 backend entirely: no AWS account,
+        # no credentials, no network calls to AWS.
+        env:
+          TF_PLUGIN_CACHE_DIR: ~/.terraform.d/plugin-cache
+        run: |
+          mkdir -p ~/.terraform.d/plugin-cache
+          set -euo pipefail
+          for dir in bootstrap \
+                     environments/dev environments/staging environments/prod \
+                     modules/*/; do
+            [ -n "$(ls "$dir"*.tf 2>/dev/null)" ] || continue
+            echo "::group::$dir"
+            terraform -chdir="$dir" init -backend=false -input=false -no-color
+            terraform -chdir="$dir" validate -no-color
+            echo "::endgroup::"
+          done
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: ${{ env.TFLINT_VERSION }}
+
+      - name: tflint
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # avoids plugin download rate limits
+        run: |
+          set -euo pipefail
+          tflint --init --config="$(pwd)/.tflint.hcl"
+          tflint --recursive --format compact --config="$(pwd)/.tflint.hcl"
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Checkov
+        # Report-only while the existing findings are burned down. Results are
+        # published to the Security tab rather than blocking the build.
+        # Pinned image: an unpinned scanner turns every upstream policy release
+        # into an unexplained failure on code that has not changed.
+        continue-on-error: true
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}":/tf -w /tf \
+            ghcr.io/bridgecrewio/checkov:${{ env.CHECKOV_VERSION }} \
+            --directory /tf \
+            --framework terraform \
+            --output cli --output sarif --output-file-path console,/tf/checkov.sarif \
+            --compact --soft-fail
+
+      - name: Publish results to the Security tab
+        continue-on-error: true
+        if: github.actor != 'dependabot[bot]'
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: checkov.sarif
+          category: checkov
